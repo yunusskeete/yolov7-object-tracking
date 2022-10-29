@@ -1,4 +1,7 @@
+from datetime import datetime
+from itertools import count
 import os
+from unicodedata import name
 import cv2
 import time
 import torch
@@ -22,6 +25,9 @@ from utils.download_weights import download
 #For SORT tracking
 import skimage
 from sort import *
+# ME
+from datetime import datetime
+# import json
 
 #............................... Tracker Functions ............................
 """ Random created palette"""
@@ -64,6 +70,8 @@ def draw_boxes(img, bbox, identities=None, categories=None, names=None,offset=(0
 
 def detect(save_img=False):
     source, weights, view_img, save_txt, imgsz, trace = opt.source, opt.weights, opt.view_img, opt.save_txt, opt.img_size, not opt.no_trace
+    print(f"save_txt: {save_txt}")
+    print(f"trace: {trace}")
     save_img = not opt.nosave and not source.endswith('.txt')  # save inference images
     webcam = source.isnumeric() or source.endswith('.txt') or source.lower().startswith(
         ('rtsp://', 'rtmp://', 'http://', 'https://'))
@@ -71,7 +79,7 @@ def detect(save_img=False):
 
     #.... Initialize SORT .... 
     #......................... 
-    sort_max_age = 5 
+    sort_max_age = 5 # The threshold at which we remove dead tracklets
     sort_min_hits = 2
     sort_iou_thresh = 0.2
     sort_tracker = Sort(max_age=sort_max_age,
@@ -134,8 +142,13 @@ def detect(save_img=False):
         rand_color = (r, g, b)
         rand_color_list.append(rand_color)
     #.........................
-   
+    
+    xxx = 1
     for path, img, im0s, vid_cap in dataset:
+        # print(f"xxx: {xxx}")
+        xxx += 1
+        if xxx % dataset.sample_rate != 0:
+            continue
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
@@ -191,6 +204,7 @@ def detect(save_img=False):
                 for x1,y1,x2,y2,conf,detclass in det.cpu().detach().numpy():
                     dets_to_sort = np.vstack((dets_to_sort, 
                                 np.array([x1, y1, x2, y2, conf, detclass])))
+                    # print(f"detclass: {detclass}")
                 
                 # Run SORT
                 tracked_dets = sort_tracker.update(dets_to_sort)
@@ -211,12 +225,26 @@ def detect(save_img=False):
                 if len(tracked_dets)>0:
                     bbox_xyxy = tracked_dets[:,:4]
                     identities = tracked_dets[:, 8]
+                    # print(f"detclass, identities: {detclass}, {identities}")
                     categories = tracked_dets[:, 4]
                     draw_boxes(im0, bbox_xyxy, identities, categories, names)
                 #........................................................
-                
-            # Print time (inference + NMS)
-            print(f'{s}Done. ({(1E3 * (t2 - t1)):.1f}ms) Inference, ({(1E3 * (t3 - t2)):.1f}ms) NMS')
+                    """
+                    cat = int(categories[i]) if categories is not None else 0
+                    id = int(identities[i]) if identities is not None else 0
+                    label = str(id) + ":"+ names[cat]
+                    """
+                    for i, box in enumerate(bbox_xyxy):
+                        cat = int(categories[i]) if categories is not None else 0
+                        id = int(identities[i]) if identities is not None else 0
+                        object_name = names[cat]
+                        if object_name not in counts:
+                            counts[object_name] = set()
+                        counts[object_name].add(id)
+                            
+            if xxx % dataset.sample_rate == 0:    
+                # # Print time (inference + NMS)
+                print(f'{s}Done. ({(1E3 * (t2 - t1)):.1f}ms) Inference, ({(1E3 * (t3 - t2)):.1f}ms) NMS')
 
             # Stream results
             if view_img:
@@ -247,12 +275,45 @@ def detect(save_img=False):
 
     if save_txt or save_img:
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
-        #print(f"Results saved to {save_dir}{s}")
+        print(f"Results saved to {save_dir}{s}")
+        """
+        SAVE TXT HERE
+        """
 
+        # for k,v in counts.items():
+        print(f"save_dir: {save_dir}")
+        print(f"opt.name: {opt.name}")
+        # WOULD NEED TO LOOP THROUGH THE FILES PROVIDED TO GET THE RIGHT ONE
+        print(f"dataset.count: {dataset.count}")
+        path_to_video = dataset.files[dataset.count-1]
+        sub= "yolov7-object-tracking/"
+        start, end = path_to_video.index(sub)+len(sub), path_to_video.index(".mp4")
+        video = path_to_video[start:end]
+        print(f"path: {video}")
+        print(f"description: {str(save_dir)[str(save_dir).index(str(opt.name)):]}")
+        print(f"description: {str(save_dir)[str(save_dir).index(str(opt.name)):]}")
+        file_name = f"{str(save_dir)[str(save_dir).index(str(opt.name)):]}_labels_{datetime.strftime(datetime.now(), '%Y%m%d_%H%M%S')}"
+        print(f"file name: {file_name}")
+        with open(f"{save_dir}/labels/{file_name}.txt", 'w') as f:
+            f.write(video + '\n')
+            f.write('DateTime: ' + datetime.strftime(datetime.now(), '%Y%m%d_%H%M%S') + '\n\n')
+            f.write('---------' + '\n\n')
+            f.write("Parameters:" + '\n')
+            f.write(f"sample_rate = {dataset.sample_rate}" + '\n')
+            f.write(f"sort_max_age = {sort_max_age}" + '\n')
+            f.write(f"sort_min_hits = {sort_min_hits}" + '\n')
+            f.write(f"sort_iou_thresh = {sort_iou_thresh}" + '\n\n')
+            f.write('---------' + '\n\n')
+            for k,v in counts.items():
+                f.write(str(k) + ': ' + str(len(v)) + '\n\n')
+            f.write('---------' + '\n\n')
+            f.write("Amalytics:" + '\n')
+            f.write(f"Run time: {time.time() - t0:.3f}s")
     print(f'Done. ({time.time() - t0:.3f}s)')
 
 
 if __name__ == '__main__':
+    counts = dict()
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', nargs='+', type=str, default='yolov7.pt', help='model.pt path(s)')
     parser.add_argument('--download', action='store_true', help='download model weights automatically')
@@ -289,3 +350,6 @@ if __name__ == '__main__':
                 strip_optimizer(opt.weights)
         else:
             detect()
+    print(f"object counts:")
+    for k,v in counts.items():
+        print(f"{k}: {len(v)}")

@@ -138,14 +138,19 @@ class LoadImages:  # for inference
             raise Exception(f'ERROR: {p} does not exist')
 
         images = [x for x in files if x.split('.')[-1].lower() in img_formats]
+        print(f"images: {images}")
         videos = [x for x in files if x.split('.')[-1].lower() in vid_formats]
+        print(f"videos: {videos}")
         ni, nv = len(images), len(videos)
 
         self.img_size = img_size
+        print(f"image size: {img_size}")
         self.stride = stride
+        print(f"stride: {stride}")
         self.files = images + videos
         self.nf = ni + nv  # number of files
         self.video_flag = [False] * ni + [True] * nv
+        print(f"video_flag: {self.video_flag}")
         self.mode = 'image'
         if any(videos):
             self.new_video(videos[0])  # new video
@@ -153,6 +158,9 @@ class LoadImages:  # for inference
             self.cap = None
         assert self.nf > 0, f'No images or videos found in {p}. ' \
                             f'Supported formats are:\nimages: {img_formats}\nvideos: {vid_formats}'
+
+        # ME
+        self.sample_rate = 1
 
     def __iter__(self):
         self.count = 0
@@ -177,8 +185,11 @@ class LoadImages:  # for inference
                     self.new_video(path)
                     ret_val, img0 = self.cap.read()
 
+            # print(f"ret_val: {ret_val}")
+            # print(f"img0.shape: {img0.shape}")
             self.frame += 1
-            print(f'video {self.count + 1}/{self.nf} ({self.frame}/{self.nframes}) {path}: ', end='')
+            if self.frame % self.sample_rate == 0:
+                print(f'video {self.count + 1}/{self.nf} ({self.frame}/{self.nframes}) {path}: ', end='')
 
         else:
             # Read image
